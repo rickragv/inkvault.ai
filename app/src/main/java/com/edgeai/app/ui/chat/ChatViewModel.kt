@@ -18,6 +18,7 @@ import com.edgeai.app.ml.InferenceChunk
 import com.edgeai.app.ml.InvestigationToolSet
 import com.edgeai.app.ml.ModelState
 import com.edgeai.app.ml.RagPipeline
+import com.edgeai.app.ml.ToolOrchestrator
 import com.google.ai.edge.litertlm.Conversation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +53,7 @@ class ChatViewModel @Inject constructor(
     private val toolSet: InvestigationToolSet,
     private val ragPipeline: RagPipeline,
     private val pipeline: DocumentProcessingPipeline,
+    private val orchestrator: ToolOrchestrator,
     private val entityRepository: EntityRepository,
     private val config: AppConfig,
 ) : ViewModel() {
@@ -208,84 +210,56 @@ class ChatViewModel @Inject constructor(
             runPipelineInBackground(sessionId)
         }
 
-        // Generate AI response
+        // Generate AI response using hybrid orchestrator:
+        // Call 1 (Planner): LLM decides which tools to call
+        // App: Executes tools, gathers data
+        // Call 2 (Synthesizer): LLM answers from gathered data (streaming)
         generationJob = viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(processingStatus = null)
 
-                // Always create fresh conversation (pipeline may have closed the previous one)
+                // Close any existing conversation for planner + tool execution
                 activeConversation?.let { inferenceEngine.closeCurrentConversation() }
+                activeConversation = null
+
+                // Step 1 & 2: LLM plans tools → App executes tools → gathers data
+                val orchestratorResult = withContext(Dispatchers.IO) {
+                    orchestrator.planAndExecute(text) { status ->
+                        _uiState.value = _uiState.value.copy(processingStatus = status)
+                    }
+                }
+
+                Log.i(TAG, "Orchestrator called ${orchestratorResult.toolsCalled.size} tools: ${orchestratorResult.toolsCalled}")
+
+                // Step 3: Create fresh conversation for synthesis
+                _uiState.value = _uiState.value.copy(processingStatus = null)
                 activeConversation = inferenceEngine.createChatConversation(
                     config.prompts.systemChat
                 )
                 val conversation = activeConversation!!
 
-                // RAG context
-                val context = try {
-                    val chunks = ragPipeline.retrieve(text)
-                    if (chunks.isNotEmpty()) ragPipeline.buildContext(chunks) else ""
-                } catch (_: Exception) { "" }
-
-                val fullMessage = if (context.isNotBlank()) {
-                    "$context\n\nUser question: $text"
-                } else {
-                    text
-                }
-
-                // Agentic loop: model generates → tool call? → execute → feed back → repeat
-                var currentMessage = fullMessage
-                var finalResponse = ""
-
-                for (round in 0 until MAX_TOOL_CALL_ROUNDS) {
-                    val responseBuilder = StringBuilder()
-
-                    inferenceEngine.sendMessageStream(conversation, currentMessage)
-                        .collect { chunk ->
-                            when (chunk) {
-                                is InferenceChunk.Token -> {
-                                    responseBuilder.append(chunk.text)
-                                    // Only show non-tool-call text in streaming
-                                    val display = stripToolCalls(responseBuilder.toString())
-                                    if (display.isNotBlank()) {
-                                        _uiState.value = _uiState.value.copy(
-                                            streamingText = display
-                                        )
-                                    }
-                                }
-                                is InferenceChunk.Done -> {}
+                // Step 4: Stream the final answer from model with full data context
+                val responseBuilder = StringBuilder()
+                inferenceEngine.sendMessageStream(conversation, orchestratorResult.finalPrompt)
+                    .collect { chunk ->
+                        when (chunk) {
+                            is InferenceChunk.Token -> {
+                                responseBuilder.append(chunk.text)
+                                _uiState.value = _uiState.value.copy(
+                                    streamingText = responseBuilder.toString()
+                                )
                             }
+                            is InferenceChunk.Done -> {}
                         }
-
-                    val responseText = responseBuilder.toString()
-                    val toolCall = extractToolCall(responseText)
-
-                    if (toolCall != null) {
-                        // Execute tool call silently — no intermediate text shown to user
-                        Log.i(TAG, "Tool call round $round: ${toolCall.name}(${toolCall.args})")
-                        _uiState.value = _uiState.value.copy(
-                            processingStatus = "Looking up ${toolCall.name.replace("_", " ")}...",
-                            streamingText = "",
-                        )
-
-                        val result = toolSet.execute(toolCall.name, toolCall.args)
-
-                        // Feed result back to model — ask for clean answer only
-                        currentMessage = "Tool result for ${toolCall.name}:\n$result\n\nNow answer the user's question in natural language. Do NOT mention tool calls, function names, or JSON. Just give a clear, direct answer citing [Doc: title] for sources."
-                        _uiState.value = _uiState.value.copy(processingStatus = null)
-                    } else {
-                        // No tool call — this is the final response
-                        finalResponse = responseText
-                        break
                     }
+
+                // Save final response
+                val finalResponse = responseBuilder.toString().trim()
+                if (finalResponse.isNotBlank()) {
+                    chatRepository.addMessage(sessionId, "assistant", finalResponse)
                 }
 
-                // Save final response (strip any remaining tool call artifacts)
-                val cleanResponse = stripToolCalls(finalResponse).trim()
-                if (cleanResponse.isNotBlank()) {
-                    chatRepository.addMessage(sessionId, "assistant", cleanResponse)
-                }
-
-                // Auto-title
+                // Auto-title first message
                 val messages = chatRepository.getMessagesOnce(sessionId)
                 if (messages.count { it.role == "user" } <= 1) {
                     val title = text.take(50).let {
@@ -316,56 +290,98 @@ class ChatViewModel @Inject constructor(
         val args: Map<String, String>,
     )
 
+    /** All known tool names for regex matching */
+    private val toolNames = listOf(
+        "search_documents", "extract_entities", "find_contradictions",
+        "build_timeline", "query_entities", "summarize_document",
+        "get_document_stats", "list_entities_by_type", "find_cross_document_entities",
+        "find_most_frequent_entities", "summarize_corpus", "deep_analysis",
+        "query_financial_data", "scan_for_red_flags", "find_all_contradictions",
+        "compare_events", "search_document_by_title",
+    )
+
+    private val toolNamePattern = toolNames.joinToString("|")
+
     /**
      * Extract a tool call from model response.
-     * Handles multiple Gemma 4 formats:
-     * - <|tool_call>call:name(args)<tool_call|>
-     * - <tool_call>call:name{args}</tool_call>
-     * - {"tool": "name", "args": {...}}
+     * Handles ALL Gemma 4 output formats.
      */
     private fun extractToolCall(response: String): ToolCall? {
-        // Format 1: <|tool_call>call:name(args)<tool_call|>  (and variations)
+        // Format 1: <|tool_call>call:name(args)<tool_call|>
         val gemmaRegex = Regex(
             """<\|?tool_call>call:(\w+)[\(\{](.*?)[\)\}]</?tool_call\|?>""",
             RegexOption.DOT_MATCHES_ALL
         )
-        val gemmaMatch = gemmaRegex.find(response)
-        if (gemmaMatch != null) {
-            val name = gemmaMatch.groupValues[1]
-            val argsRaw = gemmaMatch.groupValues[2]
+        gemmaRegex.find(response)?.let {
+            val name = it.groupValues[1]
+            val argsRaw = it.groupValues[2]
             return ToolCall(name, argsRaw, parseToolArgs(argsRaw))
         }
 
-        // Format 2: JSON {"tool": "name", "args": {...}}
-        val jsonRegex = Regex(
-            """\{"tool":\s*"(\w+)",\s*"args":\s*(\{.*?\})\}""",
+        // Format 2: {"name": "func", "parameters": {...}}  (Gemma 4 JSON schema format)
+        val jsonSchemaRegex = Regex(
+            """\{"name":\s*"($toolNamePattern)",\s*"parameters":\s*(\{.*?\})\}""",
             RegexOption.DOT_MATCHES_ALL
         )
-        val jsonMatch = jsonRegex.find(response)
-        if (jsonMatch != null) {
-            val name = jsonMatch.groupValues[1]
-            val argsJson = jsonMatch.groupValues[2]
-            val args = mutableMapOf<String, String>()
-            try {
-                val obj = JSONObject(argsJson)
-                for (key in obj.keys()) {
-                    args[key] = obj.getString(key)
-                }
-            } catch (_: Exception) {}
-            return ToolCall(name, argsJson, args)
+        jsonSchemaRegex.find(response)?.let {
+            val name = it.groupValues[1]
+            val argsJson = it.groupValues[2]
+            return ToolCall(name, argsJson, parseJsonArgs(argsJson))
+        }
+
+        // Format 3: {"tool": "name", "args": {...}}
+        val jsonToolRegex = Regex(
+            """\{"tool":\s*"($toolNamePattern)",\s*"args":\s*(\{.*?\})\}""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        jsonToolRegex.find(response)?.let {
+            val name = it.groupValues[1]
+            val argsJson = it.groupValues[2]
+            return ToolCall(name, argsJson, parseJsonArgs(argsJson))
+        }
+
+        // Format 4: Plain text "Tool Call: `name(args)`" or "`name(args)`"
+        val plainTextRegex = Regex(
+            """(?:Tool Call:?\s*)?`($toolNamePattern)\((.*?)\)`""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        plainTextRegex.find(response)?.let {
+            val name = it.groupValues[1]
+            val argsRaw = it.groupValues[2]
+            return ToolCall(name, argsRaw, parseToolArgs(argsRaw))
+        }
+
+        // Format 5: Bare function call in text: name(args) on its own line
+        val bareFuncRegex = Regex(
+            """(?:^|\n)\s*($toolNamePattern)\((.*?)\)\s*(?:\n|$)""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        bareFuncRegex.find(response)?.let {
+            val name = it.groupValues[1]
+            val argsRaw = it.groupValues[2]
+            return ToolCall(name, argsRaw, parseToolArgs(argsRaw))
         }
 
         return null
     }
 
     /**
-     * Strip tool call XML from response text so user never sees raw tool calls.
+     * Strip ALL tool call artifacts from response text.
      */
     private fun stripToolCalls(text: String): String {
-        return text
-            .replace(Regex("""<\|?tool_call>.*?</?tool_call\|?>""", RegexOption.DOT_MATCHES_ALL), "")
-            .replace(Regex("""\{"tool":\s*"\w+",\s*"args":\s*\{.*?\}\}""", RegexOption.DOT_MATCHES_ALL), "")
-            .trim()
+        var result = text
+        // XML tool calls
+        result = result.replace(Regex("""<\|?tool_call>.*?</?tool_call\|?>""", RegexOption.DOT_MATCHES_ALL), "")
+        // JSON tool calls
+        result = result.replace(Regex("""\{"(?:name|tool)":\s*"(?:$toolNamePattern)".*?\}""", RegexOption.DOT_MATCHES_ALL), "")
+        // Plain text tool calls
+        result = result.replace(Regex("""(?:Tool Call:?\s*)?`(?:$toolNamePattern)\(.*?\)`""", RegexOption.DOT_MATCHES_ALL), "")
+        // Bare function calls
+        result = result.replace(Regex("""(?:^|\n)\s*(?:$toolNamePattern)\(.*?\)\s*(?:\n|$)""", RegexOption.DOT_MATCHES_ALL), "\n")
+        // Strip reasoning prefixes
+        result = result.replace(Regex("""^(?:I will|Let me|First,? I|I can|I need to|To (?:answer|provide|analyze)).*?\n""", RegexOption.MULTILINE), "")
+        result = result.replace(Regex("""^(?:Here is my|Here are the|Based on the tool).*?:\s*\n""", RegexOption.MULTILINE), "")
+        return result.trim()
     }
 
     /**
@@ -373,15 +389,28 @@ class ChatViewModel @Inject constructor(
      */
     private fun parseToolArgs(argsStr: String): Map<String, String> {
         val args = mutableMapOf<String, String>()
-        // Handle: entity_type='person', limit=5
-        // Handle: entity_name="Arvind Sharma"
-        // Handle: key:value
         val pairs = argsStr.split(",")
         for (pair in pairs) {
             val kv = pair.split(Regex("[=:]"), limit = 2)
             if (kv.size == 2) {
-                args[kv[0].trim()] = kv[1].trim().trim('\'', '"')
+                args[kv[0].trim()] = kv[1].trim().trim('\'', '"', '<', '>', '|')
             }
+        }
+        return args
+    }
+
+    /**
+     * Parse JSON object args.
+     */
+    private fun parseJsonArgs(json: String): Map<String, String> {
+        val args = mutableMapOf<String, String>()
+        try {
+            val obj = JSONObject(json)
+            for (key in obj.keys()) {
+                args[key] = obj.getString(key)
+            }
+        } catch (_: Exception) {
+            return parseToolArgs(json)
         }
         return args
     }
