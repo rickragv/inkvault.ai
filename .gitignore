@@ -1,0 +1,41 @@
+# Android
+*.iml
+.gradle/
+/local.properties
+local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.hprof
+*.apk
+*.aab
+
+# Secrets
+.secrets/
+
+# Model files (too large for git)
+*.task
+*.litertlm
+*.bin
+/model/
+
+# Test data
+/test_data/
+
+# Kotlin / Java
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.log
+
+# OS
+Thumbs.db
+*.swp
+*~
+
+# Claude Code
+.claude/plans/

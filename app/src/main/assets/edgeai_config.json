@@ -1,0 +1,186 @@
+{
+  "model": {
+    "supported_extensions": [".litertlm", ".task", ".bin"],
+    "file_prefixes": ["gemma-4", "gemma4", "gemma_4", "gemma-3", "gemma3", "gemma_3", "gemma"],
+    "search_directories": ["models", "Download"],
+    "display_name": "Gemma 4",
+    "max_tokens": 8192,
+    "temperature": 0.15,
+    "top_k": 40,
+    "top_p": 0.95
+  },
+  "inference": {
+    "max_retries": 2,
+    "retry_on_malformed_json": true,
+    "stream_buffer_size": 32
+  },
+  "tools": {
+    "search_documents": {
+      "name": "search_documents",
+      "description": "Search across all ingested documents using full-text and semantic search. Returns matching text excerpts with document titles.",
+      "params": [
+        {"name": "query", "type": "string", "description": "Search query text", "required": true},
+        {"name": "limit", "type": "int", "description": "Maximum number of results to return", "required": false, "default": 5}
+      ]
+    },
+    "extract_entities": {
+      "name": "extract_entities",
+      "description": "Extract or retrieve named entities (people, companies, shell entities, dates, money amounts, locations, designations) from a specific document.",
+      "params": [
+        {"name": "document_id", "type": "long", "description": "ID of the document to extract entities from", "required": true}
+      ]
+    },
+    "find_contradictions": {
+      "name": "find_contradictions",
+      "description": "Compare two documents and find contradictions, conflicts, date mismatches, or inconsistencies between them.",
+      "params": [
+        {"name": "doc_id_a", "type": "long", "description": "ID of the first document", "required": true},
+        {"name": "doc_id_b", "type": "long", "description": "ID of the second document", "required": true}
+      ]
+    },
+    "build_timeline": {
+      "name": "build_timeline",
+      "description": "Build a chronological timeline of all dated events found across specified documents.",
+      "params": [
+        {"name": "document_ids", "type": "string", "description": "Comma-separated document IDs, or 'all' for entire corpus", "required": true}
+      ]
+    },
+    "query_entities": {
+      "name": "query_entities",
+      "description": "Find all appearances of a specific entity across the entire document corpus. Shows which documents mention this entity and in what context.",
+      "params": [
+        {"name": "entity_name", "type": "string", "description": "Name of the entity to search for", "required": true},
+        {"name": "entity_type", "type": "string", "description": "Type filter: person, company, shell_entity, date, money, location, designation. Leave empty for all types.", "required": false}
+      ]
+    },
+    "summarize_document": {
+      "name": "summarize_document",
+      "description": "Generate a concise summary of a specific document, highlighting key findings, entities, and suspicious patterns.",
+      "params": [
+        {"name": "document_id", "type": "long", "description": "ID of the document to summarize", "required": true}
+      ]
+    },
+    "get_document_stats": {
+      "name": "get_document_stats",
+      "description": "Get an overview of the current document corpus: total documents, total entities, entity type breakdown, most frequent entities, and recent additions.",
+      "params": []
+    },
+    "list_entities_by_type": {
+      "name": "list_entities_by_type",
+      "description": "List all entities of a specific type across the entire corpus. Use this when asked 'who are all the people mentioned', 'list all companies', 'show all locations', etc. Groups by unique entity name and shows which documents each appears in.",
+      "params": [
+        {"name": "entity_type", "type": "string", "description": "Entity type: person, company, shell_entity, date, money, location, designation, or 'all' for everything", "required": true},
+        {"name": "limit", "type": "int", "description": "Maximum entities to return, sorted by frequency", "required": false, "default": 50}
+      ]
+    },
+    "find_cross_document_entities": {
+      "name": "find_cross_document_entities",
+      "description": "Find entities that appear across multiple documents — critical for cross-referencing investigations. Shows which entities connect different documents together. Use for questions like 'which entities appear in more than one document', 'show me every entity that appears in both the land records and ministry contracts'.",
+      "params": [
+        {"name": "min_documents", "type": "int", "description": "Minimum number of documents an entity must appear in (default 2)", "required": false, "default": 2},
+        {"name": "entity_type", "type": "string", "description": "Optional type filter: person, company, shell_entity, etc. Leave empty for all.", "required": false}
+      ]
+    },
+    "find_most_frequent_entities": {
+      "name": "find_most_frequent_entities",
+      "description": "Find the most frequently mentioned entities across the entire corpus, ranked by mention count. Use for questions like 'who are the three people who appear most frequently', 'what are the top companies mentioned'.",
+      "params": [
+        {"name": "entity_type", "type": "string", "description": "Optional type filter: person, company, shell_entity, etc. Leave empty for all types.", "required": false},
+        {"name": "limit", "type": "int", "description": "Number of top entities to return", "required": false, "default": 10}
+      ]
+    },
+    "summarize_corpus": {
+      "name": "summarize_corpus",
+      "description": "Summarize the ENTIRE investigation corpus — all documents combined into one narrative overview. Use when asked for 'a summary of the entire investigation', 'overview of all documents', 'what does this investigation show'.",
+      "params": []
+    },
+    "deep_analysis": {
+      "name": "deep_analysis",
+      "description": "Perform deep analytical reasoning over the entire corpus with maximum context. Use for complex investigative questions: 'build a case for money laundering', 'who benefits most', 'what is the chain of money flow', 'if you were a journalist what would be your lead story', 'what questions should I ask in my next RTI', 'what are the next steps in this investigation'.",
+      "params": [
+        {"name": "question", "type": "string", "description": "The analytical question to investigate", "required": true}
+      ]
+    },
+    "query_financial_data": {
+      "name": "query_financial_data",
+      "description": "Aggregate and analyze all financial/monetary data across the corpus or in a specific document. Use for: 'total money involved', 'summarize all financial transactions', 'how much FDI was received', 'declared value vs market value', 'was stamp duty correct', any question about amounts, payments, or values.",
+      "params": [
+        {"name": "document_id", "type": "long", "description": "Optional: specific document ID. Leave empty to query entire corpus.", "required": false}
+      ]
+    },
+    "scan_for_red_flags": {
+      "name": "scan_for_red_flags",
+      "description": "Systematically scan documents for suspicious patterns, illegal activity indicators, and red flags. Use for: 'any suspicious instructions', 'does this suggest illegal activity', 'anything unusual about this deal', 'what did the government refuse to provide', 'are there hidden patterns'.",
+      "params": [
+        {"name": "document_id", "type": "long", "description": "Optional: specific document ID. Leave empty to scan entire corpus.", "required": false}
+      ]
+    },
+    "find_all_contradictions": {
+      "name": "find_all_contradictions",
+      "description": "Find ALL contradictions and inconsistencies across the entire document corpus, not just between two specific documents. Use for: 'any date contradictions across documents', 'find all inconsistencies', 'what conflicts exist between these documents'.",
+      "params": []
+    },
+    "compare_events": {
+      "name": "compare_events",
+      "description": "Compare two events chronologically — which happened first, how far apart, and from which documents. Use for: 'which happened first, the payment or the signing', 'when was the land registered', 'did the approval come before or after the transaction'.",
+      "params": [
+        {"name": "event_a", "type": "string", "description": "Description of the first event to find", "required": true},
+        {"name": "event_b", "type": "string", "description": "Description of the second event to find", "required": true}
+      ]
+    },
+    "search_document_by_title": {
+      "name": "search_document_by_title",
+      "description": "Find and retrieve a document by its title, description, or number rather than requiring an exact ID. Use for: 'what is Document 3 about', 'explain the RTI reply', 'the internal memo', 'the land registry document'. Returns the document text for analysis.",
+      "params": [
+        {"name": "query", "type": "string", "description": "Document title, description, or number to search for", "required": true}
+      ]
+    }
+  },
+  "prompts": {
+    "system_chat": "You are an investigative journalism assistant running entirely on-device. You help journalists analyze documents, find patterns, and uncover stories.\n\nAVAILABLE TOOLS (17 total):\n\nSEARCH & RETRIEVAL:\n- search_documents(query, limit): Full-text + semantic search across corpus\n- search_document_by_title(query): Find document by title/number ('Document 3', 'RTI reply', 'internal memo')\n- get_document_stats(): Corpus overview — doc count, entity breakdown\n\nENTITY ANALYSIS:\n- extract_entities(document_id): Extract entities from a specific document\n- query_entities(entity_name, entity_type?): Find a SPECIFIC entity across all documents\n- list_entities_by_type(entity_type, limit?): List ALL entities of a type (all people, all companies)\n- find_cross_document_entities(min_documents?, entity_type?): Entities appearing in 2+ documents\n- find_most_frequent_entities(entity_type?, limit?): Top entities ranked by frequency\n\nCONTRADICTION & COMPARISON:\n- find_contradictions(doc_id_a, doc_id_b): Compare two specific documents\n- find_all_contradictions(): Scan ENTIRE corpus for all inconsistencies\n- compare_events(event_a, event_b): Which event happened first? Chronological comparison\n\nFINANCIAL:\n- query_financial_data(document_id?): All money amounts, transactions, flows. Totals and analysis\n\nTIMELINE:\n- build_timeline(document_ids): Chronological events from specified docs or 'all'\n\nSUMMARY & DEEP ANALYSIS:\n- summarize_document(document_id): Summarize one document\n- summarize_corpus(): One-paragraph overview of the ENTIRE investigation\n- deep_analysis(question): Complex analytical reasoning with maximum context\n- scan_for_red_flags(document_id?): Systematic scan for suspicious patterns and illegality\n\nTOOL SELECTION GUIDE:\n- 'What is Document 3 about?' → search_document_by_title(query='Document 3')\n- 'Explain the RTI reply in simple terms' → search_document_by_title(query='RTI reply')\n- 'Summary of the entire investigation' → summarize_corpus()\n- 'Who are all the people mentioned?' → list_entities_by_type(entity_type='person')\n- 'Which entities appear in more than one document?' → find_cross_document_entities()\n- 'Who is Arvind Sharma?' → query_entities(entity_name='Arvind Sharma')\n- 'Total money involved across all documents' → query_financial_data()\n- 'Any suspicious instructions?' → scan_for_red_flags()\n- 'Build a case for money laundering' → deep_analysis(question='evidence of money laundering')\n- 'What would be your lead story?' → deep_analysis(question='lead story for journalist')\n- 'Any date contradictions?' → find_all_contradictions()\n- 'Which happened first, payment or signing?' → compare_events(event_a='payment', event_b='contract signing')\n- 'Create a timeline' → build_timeline(document_ids='all')\n- 'List all dates mentioned' → list_entities_by_type(entity_type='date')\n- 'Summarize all financial transactions' → query_financial_data()\n- 'What questions should I ask in next RTI?' → deep_analysis(question='what questions to ask in next RTI application')\n\nCRITICAL RULES:\n1. ALWAYS use the appropriate tool — NEVER answer from memory or fabricate.\n2. Cite the source document for every claim: [Doc: title]\n3. Flag suspicious patterns: shell companies, round-trip transactions, date discrepancies.\n4. For complex or open-ended questions, use deep_analysis.\n5. All data stays on this device. Be thorough but factual.\n6. Support queries in any language. Translate relevant parts if multilingual.",
+    "ocr_crossref": "You have TWO sources: the document IMAGE (above) and OCR text (below). The OCR may have errors, especially with non-Latin scripts (Hindi, Urdu, Arabic, etc.).\n\nCross-reference the image with the text. Correct any OCR errors by reading the image directly. Output the corrected full text.\n\nIf the document is in a non-English language:\n1. First output the corrected text in the ORIGINAL language\n2. Then output an English translation after a line '--- ENGLISH TRANSLATION ---'\n\nOCR text (may contain errors):\n{ocr_text}",
+    "ner_extract": "Extract all named entities from the following document text. Output ONLY valid JSON array.\n\n[{\"type\":\"person|company|shell_entity|date|money|location|designation\",\"mention\":\"exact text as found\",\"normalized\":\"cleaned lowercase form\",\"start\":0,\"end\":10,\"metadata\":{}}]\n\nEntity type definitions:\n- person: Individual names (politicians, executives, witnesses, etc.)\n- company: Any company, firm, trust, organization, NGO\n- shell_entity: Entities that appear to be intermediaries, holding companies, or PO boxes\n- date: Any date or time reference (extract in YYYY-MM-DD format in metadata)\n- money: Monetary amounts (include amount and currency in metadata)\n- location: Places, addresses, districts, states, countries\n- designation: Government titles, official positions, ranks\n\nRULES:\n- Extract ALL entities, even if repeated\n- For money entities, include {\"amount\": number, \"currency\": \"code\"} in metadata\n- For date entities, include {\"iso_date\": \"YYYY-MM-DD\"} in metadata\n- If text is multilingual, extract entities in their original script AND transliterated form\n\nDocument text:\n{text}",
+    "relationship_extract": "Given these entities found in a document, identify relationships between them.\n\nOutput JSON array:\n[{\"source\":\"entity normalized name\",\"target\":\"entity normalized name\",\"type\":\"mentioned_with|transacted_with|subsidiary_of|signed_by|appointed_by|located_at|paid_to|received_from\",\"evidence\":\"supporting quote from text\",\"confidence\":0.0}]\n\nFocus on:\n- Financial transactions between entities\n- Organizational hierarchies (subsidiary, parent company)\n- People associated with companies or positions\n- Geographic connections\n\nEntities:\n{entities}\n\nDocument text:\n{text}",
+    "contradiction_check": "Compare these two document excerpts and identify ALL contradictions, conflicts, or inconsistencies.\n\nFocus on:\n- Date conflicts: same event appears with different dates\n- Amount mismatches: same transaction shows different amounts\n- Statement contradictions: conflicting claims about the same fact\n- Entity discrepancies: same entity described differently or with different attributes\n- Missing information: something present in one doc that should be in the other\n\nOutput JSON array:\n[{\"type\":\"date_conflict|amount_mismatch|statement_contradiction|entity_discrepancy\",\"summary\":\"human-readable description\",\"evidence_a\":\"exact quote from Document A\",\"evidence_b\":\"exact quote from Document B\",\"severity\":\"high|medium|low\"}]\n\nIf no contradictions found, output an empty array: []\n\nDocument A ({doc_a_title}):\n{text_a}\n\nDocument B ({doc_b_title}):\n{text_b}",
+    "date_extract": "Extract all dates and time references from this text. Output JSON array:\n[{\"date\":\"YYYY-MM-DD\",\"description\":\"what happened on this date\",\"snippet\":\"exact surrounding text (max 200 chars)\",\"type\":\"transaction|signing|audit|filing|meeting|registration|deadline|other\"}]\n\nRULES:\n- Convert all date formats to ISO-8601 (YYYY-MM-DD)\n- If only month/year is given, use first of month (YYYY-MM-01)\n- If only year, use YYYY-01-01\n- Include relative dates resolved to absolute if context allows\n- For date ranges, create two entries (start and end)\n\nText:\n{text}",
+    "combined_extract": "Analyze the following document and extract ALL of the following in a SINGLE JSON object.\n\nOutput ONLY valid JSON:\n{\n  \"entities\": [{\"type\":\"person|company|shell_entity|date|money|location|designation\",\"mention\":\"exact text\",\"normalized\":\"cleaned lowercase\",\"metadata\":{}}],\n  \"relationships\": [{\"source\":\"entity normalized name\",\"target\":\"entity normalized name\",\"type\":\"mentioned_with|transacted_with|subsidiary_of|signed_by|appointed_by|located_at|paid_to|received_from\",\"evidence\":\"supporting quote\",\"confidence\":0.8}],\n  \"dates\": [{\"date\":\"YYYY-MM-DD\",\"description\":\"what happened\",\"snippet\":\"surrounding text (max 200 chars)\",\"type\":\"transaction|signing|audit|filing|meeting|other\"}]\n}\n\nEntity types:\n- person: Individual names\n- company: Companies, firms, trusts, organizations\n- shell_entity: Intermediaries, holding companies, PO boxes\n- date: Date/time references (include iso_date in metadata)\n- money: Monetary amounts (include amount and currency in metadata)\n- location: Places, addresses, districts, states\n- designation: Government titles, official positions\n\nRULES:\n- Extract ALL entities even if repeated\n- For money: include {\"amount\": number, \"currency\": \"code\"} in metadata\n- For dates: convert to YYYY-MM-DD format\n- Relationships: identify financial, organizational, and geographic connections\n- Be thorough — this is for investigative journalism\n\nDocument text:\n{text}",
+    "summarize": "Summarize the following document concisely. Highlight:\n1. Key entities mentioned (people, companies, amounts)\n2. Important dates and events\n3. Any suspicious patterns or red flags\n4. The document's apparent purpose\n\nKeep the summary under 300 words.\n\nDocument title: {title}\nDocument text:\n{text}",
+    "translate": "Translate the following text from {source_lang} to {target_lang}. Preserve:\n- Proper nouns (names, places, organizations) — keep original + translation\n- Numbers and dates exactly as they appear\n- Document formatting and structure\n\nText:\n{text}"
+  },
+  "rag": {
+    "chunk_size": 512,
+    "chunk_overlap": 64,
+    "fts_result_limit": 10,
+    "vector_result_limit": 10,
+    "merged_top_k": 5,
+    "fts_weight": 0.4,
+    "vector_weight": 0.6
+  },
+  "processing": {
+    "max_pages_per_pdf": 50,
+    "ocr_confidence_threshold": 0.6,
+    "ner_batch_size": 1,
+    "contradiction_check_on_ingest": true,
+    "max_similar_docs_for_contradiction": 5
+  },
+  "preprocessing": {
+    "enabled": true,
+    "grayscale": false,
+    "contrast_boost": 1.0,
+    "sharpen": false,
+    "binarize": false,
+    "binarize_threshold": 140
+  },
+  "supported_languages": [
+    "en", "hi", "ur", "ta", "te", "bn", "mr", "gu", "kn", "ml",
+    "pa", "or", "as", "ne", "si", "ar", "fa", "ps", "sd", "ks"
+  ],
+  "ui": {
+    "max_response_display_lines": 1000,
+    "streaming_cursor_char": "\u2588",
+    "image_max_dimension": 2048,
+    "image_quality": 85,
+    "graph_force_iterations": 100,
+    "timeline_date_format": "dd MMM yyyy"
+  }
+}
